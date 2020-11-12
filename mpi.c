@@ -205,9 +205,8 @@ main(int argc, char * argv[])
     for (int r = 1; r < p; r ++){
 //Recieves each part of distance array
     size_t const rn = (r + 1) * base > n ? n - r * base : base;
-    ret = MPI_Recv(distance + r * ln, rn, MPI_DOUBLE, r, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE); 
+    ret = MPI_Recv(distance + r * ln, rn * m, MPI_DOUBLE, r, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE); 
     assert(MPI_SUCCESS == ret);
-
   }
 }
 
@@ -233,6 +232,15 @@ if (0 == rank){
   printf("---------------------------------\n");
   fflush(stdout);
 
+  /* print entire array 
+  for (size_t i = 0; i < n; i++) {
+    printf("%9zu   %10.1lf   %8.1lf\n", sorted[i].viewer_id + 1,
+    rating[sorted[i].viewer_id * m + 4], sorted[i].distance);
+    fflush(stdout);
+  }
+*/
+
+/* Print top 10 closest viewers in sorted array */
   for (size_t i = 0; i < k; i++) {
     printf("%9zu   %10.1lf   %8.1lf\n", sorted[i].viewer_id + 1,
     rating[sorted[i].viewer_id * m + 4], sorted[i].distance);
