@@ -142,8 +142,7 @@ main(int argc, char * argv[])
     /* Check for success. */
     assert(rating);
 
-    ret = MPI_Recv(rating, ln * m, MPI_DOUBLE, 0, 0, MPI_COMM_WORLD,
-      MPI_STATUS_IGNORE);
+    ret = MPI_Recv(rating, ln * m, MPI_DOUBLE, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
     assert(MPI_SUCCESS == ret);
   }
 
@@ -155,14 +154,13 @@ main(int argc, char * argv[])
 
   /* Get user input and send it to rest of processes. */
   if (0 == rank) {
-    //distance = calloc(n, sizeof(*distance));
+//distance = calloc(n, sizeof(*distance));
     for (size_t j = 0; j < m - 1; j++) {
       printf("Enter your rating for movie %zu: ", j + 1);
       fflush(stdout);
       scanf("%lf", &urating[j]);
     } 
-  
-// this will not print for some reason
+
     printf("Enter the number of similar viewers to report:\n ");
     scanf("%zu", &k);
  
@@ -176,7 +174,7 @@ main(int argc, char * argv[])
     assert(MPI_SUCCESS == ret);
   }
 
-//Start the new code HERE
+//START THE NEW CODE HERE
 
 //  Get distance for rank == 0; ln = nrows (part of array given to each processor)
   if (0 == rank){
@@ -206,7 +204,8 @@ main(int argc, char * argv[])
   }else{
     for (int r = 1; r < p; r ++){
 //Recieves each part of distance array
-    ret = MPI_Recv(distance + r * ln, ln, MPI_DOUBLE, r, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE); 
+    size_t const rn = (r + 1) * base > n ? n - r * base : base;
+    ret = MPI_Recv(distance + r * ln, rn, MPI_DOUBLE, r, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE); 
     assert(MPI_SUCCESS == ret);
 
   }
