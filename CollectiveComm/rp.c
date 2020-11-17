@@ -35,6 +35,8 @@ THE SOFTWARE.
 /* EXIT_SUCCESS, malloc, calloc, free, qsort */
 #include <stdlib.h>
 
+#include <omp.h>
+
 #define MPI_SIZE_T MPI_UNSIGNED_LONG
 
 struct distance_metric {
@@ -105,8 +107,8 @@ main(int argc, char * argv[])
     assert(!ret);
   }
 
-   MPI_Bcast(&n, 1, MPI_SIZE_T, 0, MPI_Comm_World);
-   MPI_Bcast(&m, 1, MPI_SIZE_T, 0, MPI_Comm_World);
+   MPI_Bcast(&n, 1, MPI_SIZE_T, 0, MPI_COMM_WORLD);
+   MPI_Bcast(&m, 1, MPI_SIZE_T, 0, MPI_COMM_WORLD);
 
 #if 0
   /* Send number of viewers and movies to rest of processes. */
@@ -133,22 +135,36 @@ main(int argc, char * argv[])
   /* Compute local number of viewers. */
   size_t const ln = (rank + 1) * base > n ? n - rank * base : base;
 
-  /* Send viewer data to rest of processes. */
+  if (0 != rank){
+  /* Allocate memory. */
+    rating = malloc(ln * m * sizeof(*rating));
 
-  size_t * scount = malloc(p * sizeof(size_t));
-  size_t * disp = malloc(p * sizeof(size_t));
-  int sum = 0;
-  double rbuff[base];
-
-  for (int r = 0; r < p; r++){
-    size_t rn = (r + 1) * base > n ? n - r * base : base;
-    scount[r] = rn; 
-
-    disp[r] = sum;
-    sum += rn;
+  /* Check for success. */
+    assert(rating);
   }
- 
-  MPI_Scatterv(rating, scount, disp, MPI_DOUBLE, &rbuff, base, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+
+  int * scount;
+  int * disp; 
+
+ /* Send viewer data to rest of processes. */
+  if (0 == rank){
+    scount = malloc(p * sizeof(*scount));
+    assert(scount);
+    disp = malloc(p * sizeof(*disp));
+    assert(disp);
+
+    for (int r = 0; r < p; r++){
+      size_t rn = (r + 1) * base > n ? n - r * base : base;
+   /* an array of (rn * m) shows how much of array to give each process */
+      scount[r] = rn * m; 
+      disp[r] = r * base * m;
+      //sum += disp[r];
+    }
+  }
+     // MPI_Scatter(rating, base * m, MPI_DOUBLE, rating, base * m, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+  
+  ret = MPI_Scatterv(rating, scount, disp, MPI_DOUBLE, rating, base * m, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+  assert(MPI_SUCCESS == ret);
 
 #if 0
   if (0 == rank) {
@@ -188,8 +204,8 @@ main(int argc, char * argv[])
     }
   }
 
-  MPI_BCast(urating, m - 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
-
+  ret = MPI_Bcast(urating, m - 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+  assert(MPI_SUCCESS == ret);
 #if 0
     for (int r = 1; r < p; r++) {
       ret = MPI_Send(urating, m - 1, MPI_DOUBLE, r, 0, MPI_COMM_WORLD);
@@ -214,11 +230,9 @@ main(int argc, char * argv[])
   /* Check for success. */
   assert(distance);
 
-  size_t * recdata = malloc(p * sizeof(size_t));
-  size_t * rdisp = malloc(p * sizeof(size_t));
-  size_t * rcount = malloc(p * sizeof(size_t));
-  int rsum = 0;
-  double * fulldist = malloc(n * sizeof(*fulldist));
+  double ts = omp_get_wtime();
+
+
 
   /* Compute distances. */
   for (size_t i = 0; i < ln; i++) {
@@ -227,14 +241,33 @@ main(int argc, char * argv[])
     }  
   }
 
-  for (size_t i = 0; i < ln; i++) {
-    rcount[i] = ln;
-    rdisp[i] = rsum;
-    rsum += ln; 
+  double te = omp_get_wtime();
+  double local_elapsed = te - ts;
+  double global_elapsed;
+  ret = MPI_Reduce(&local_elapsed, &global_elapsed , 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+  assert(MPI_SUCCESS == ret);
+
+  if (0 == rank){
+    printf("Elapsed Time: %f\n", global_elapsed);
   }
 
-    MPI_Gatherv(distance, base, MPI_DOUBLE, fulldist, rcount, MPI_DOUBLE, 0, MPI_COMM_WORLD);
-  
+  int * rdisp;
+  int * rcount;
+  double * fulldist;
+
+  if (0 == rank){
+    rdisp = malloc(p * sizeof(*rdisp));
+    rcount = malloc(p * sizeof(*rcount));
+    fulldist = malloc(n * sizeof(*fulldist));
+    for (size_t r = 0; r < p; r++) {
+      size_t rn = (r + 1) * base > n ? n - r * base : base;
+      rcount[r] = rn;
+      rdisp[r] = r * base;
+    }
+  }
+
+  ret = MPI_Gatherv(distance, ln, MPI_DOUBLE, fulldist, rcount, rdisp, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+  assert(MPI_SUCCESS == ret);
 #if 0
   if (0 == rank) {
     for (int r = 1; r < p; r++) {
@@ -249,12 +282,15 @@ main(int argc, char * argv[])
   }
 #endif
   if (0 == rank) {
+    free(rcount); 
+    free(rdisp);     
+
     struct distance_metric * distance2 = malloc(n * sizeof(*distance2));
     assert(distance2);
 
     for (size_t i = 0; i < n; i++) {
       distance2[i].viewer_id = i;
-      distance2[i].distance = distance[i];
+      distance2[i].distance = fulldist[i];
     }
 
     /* Sort distances. */
@@ -286,6 +322,7 @@ main(int argc, char * argv[])
     printf("The predicted rating for movie five is %.1lf.\n", sum / k);
 
     free(distance2);
+    free(fulldist);
   }
 
   /* Deallocate memory. */
